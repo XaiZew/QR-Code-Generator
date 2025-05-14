@@ -1,6 +1,16 @@
 # QR-Code-Generator
-Simple QR Code Generator
+Simple QR Code Generator using ReedSolomon for data encoding
 Basic function, missing Penalty 3 calculation, only ECC rate 7, Version 1 & 2
+
+Dependencies:
+- matplotlib
+- reedsolo
+- numpy
+- flask
+How to install dependencies if missing:
+```
+pip install --upgrade reedsolo, matplotlib, numpy, flask
+```
 
 How to run:
 Open CMD or terminal of your choosing.
