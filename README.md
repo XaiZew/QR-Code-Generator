@@ -9,7 +9,7 @@ Dependencies:
 - flask
 How to install dependencies if missing:
 ```
-pip install --upgrade reedsolo, matplotlib, numpy, flask
+pip install --upgrade reedsolo matplotlib numpy flask
 ```
 
 How to run:
