@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Sender</title>
+        <link rel="stylesheet" type="text/css" href="style.css">
+    </head>
+    <body>
+        <div class="container">
+            <div class="section">
+                <div class="line-l">
+                    <h1>QR Code Generator | V1 & V2 | Error Correct Level L</h1>
+                </div>
+            </div>
+            <div class="section">
+                <div class="line-r">
+                    <div class="inputclass">
+                        <input placeholder="Enter Text" type="text" id="string">
+                        <button id="send_btn" onclick="send_to_py()">Generate</button>
+                    </div>
+                </div>
+            </div>
+
+            <script src="./sender.js"></script>
+            <div class="imgdiv">
+                <img id="qr_img" style="display:none;"/>
+            </div>
+        </div>
+    </body>
+</html>
