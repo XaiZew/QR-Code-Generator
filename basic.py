@@ -15,7 +15,7 @@ def generate_error_corrected_codewords(data_bytes, ecc_codewords):
     corrected_bits = ''.join(format(byte, '08b') for byte in full)  # convert to bit string
     return corrected_bits
 
-def build_qr_payload(data_bytes, V=1):
+def build_qr_payload(data_bytes, ecc_level='L', V=1):
     bits = '0100'  # byte mode
     bits += format(len(data_bytes), '08b')  # character count
 
@@ -29,18 +29,59 @@ def build_qr_payload(data_bytes, V=1):
 
     # Pad with alternating bytes to reach 152 bits
     pad_bytes = ['11101100', '00010001']
+    print(bits)
+
+    def check_len():
+        print("len = ", len(bits), " | vlen = ", vlen)
+        if len(bits) > vlen:
+            return True
+        else:
+            return False
+        
+    vlen = 152
+    ecc_table = {
+        (1, 'L'): 152, (1, 'M'): 128, (1, 'Q'): 104, (1, 'H'): 72,
+        (2, 'L'): 272, (2, 'M'): 224, (2, 'Q'): 176, (2, 'H'): 128,
+        # Add more versions if needed
+    }
+    ecc_order = ['H', 'Q', 'M', 'L']
+    vlen = ecc_table.get((V, ecc_level))
+    version_limit = 2
+    while True:
+        if check_len() == False:
+            break
+        index = ecc_order.index(ecc_level)
+        print('V = ', V, ' | ECC_level = ', ecc_level, " | vlen = ", vlen, " | ", "length of bits = ", len(bits))
+        V += 1
+        print(V)
+        if V > version_limit:
+            V -= 1
+            print("Cannot go up a version so lowering ecc rate")
+            vlen = ecc_table.get((V, ecc_level))
+            if index < len(ecc_order) - 1:
+                ecc_level = ecc_order[index + 1]  # go down one level
+                vlen = ecc_table.get((V, ecc_level))
+                print('lowering ecc_level to ', ecc_level)
+            else:
+                print("Cannot lower ecc rate nor version level")
+                break
+        vlen = ecc_table.get((V, ecc_level))
+
+    print('end', 'V = ', V, ' | ECC_level = ', ecc_level, " | vlen = ", vlen, " | ", "length of bits = ", len(bits))
+
     i = 0
     if V == 1:
-        while len(bits) < 152:
+        while len(bits) < vlen:
             bits += pad_bytes[i % 2]
             i += 1
     elif V == 2:
-        while len(bits) < 272:
+        while len(bits) < vlen:
             bits += pad_bytes[i % 2]
             i += 1
 
     data_codewords = [int(bits[i:i+8], 2) for i in range(0, len(bits), 8)] # splits bytes
-    return data_codewords
+    print("after padding", bits)
+    return data_codewords, V, ecc_level
 
 def generate_grid(size=21):
     grid = [[0] * size for _ in range(size)]
@@ -109,6 +150,9 @@ def is_reserved(r, c, size=21):
     if size>21:
         if (r > size-7-3 and r < size-4) and (c > size-7-3 and c < size-4):
             return True
+    if logo and size>21:
+        if (r < size-10 and r > 10 and c > 10 and c < size-10):
+            return True
     return False
 
 def add_data(grid, data):
@@ -126,6 +170,8 @@ def add_data(grid, data):
             for offset in [0, -1]:
                 c = col + offset
                 if is_reserved(row, c, size):
+                    if logo and is_reserved(row, c, size) == 2:
+                        grid[row][c] = is_reserved(row, c, size)
                     continue
                 if bit_index < len(data):
                     grid[row][c] = int(data[bit_index])
@@ -136,7 +182,6 @@ def add_data(grid, data):
 
     return grid
 
-# unfinished
 def penalty_1(grid):
     size = len(grid)
     curr_count = 0
@@ -173,10 +218,24 @@ def penalty_2(grid):
     return penalty_score
 
 def penalty_3(grid):
-    penalty_total = 0
-    pattern1 = [0,1,0,0,0,1,0,1,1,1,1]
-    pattern2 = [1,1,1,1,0,1,0,0,0,1,0]
-    return 0
+    size = len(grid)
+    penalty_score = 0
+    pattern1 = [1,0,1,1,1,0,1,0,0,0,0]
+    pattern2 = [0,0,0,0,1,0,1,1,1,0,1]
+    pattern_length = len(pattern1)
+    for r in range(size):
+        for c in range(size - pattern_length + 1):
+            window = grid[r][c:c+pattern_length]
+            if window == pattern1 or window == pattern2:
+                print("Found pattern at row", r, "col", c, ":", window)
+                penalty_score += 40
+    for c in range(size):
+        for r in range(size - pattern_length + 1):
+            window = [grid[r+i][c] for i in range(pattern_length)]
+            if window == pattern1 or window == pattern2:
+                penalty_score += 40
+                print("Found pattern at col", c, "rpw", r, ":", window)
+    return penalty_score
 
 def penalty_4(grid):
     size = len(grid)
@@ -243,7 +302,7 @@ def apply_mask_pattern(grid, m=0):
                     grid_copy[r][c] ^= 1
     return grid_copy
 
-def get_format_bits(error_correction='01', mask_pattern_no=0):
+def get_format_bits(ec='L', mask_pattern_no=0):
     mask_pattern = "000"
     if mask_pattern_no == 1:
         mask_pattern = "001"
@@ -259,6 +318,15 @@ def get_format_bits(error_correction='01', mask_pattern_no=0):
         mask_pattern = "110"
     elif mask_pattern_no == 7:
         mask_pattern = "111"
+    
+    if ec == 'L':
+        error_correction = '01'
+    if ec == 'M':
+        error_correction = '00'
+    if ec == 'Q':
+        error_correction = '11'
+    if ec == 'H':
+        error_correction = '10'
 
     format_data = error_correction + mask_pattern
     format_data_value = int(format_data, 2)
@@ -303,34 +371,50 @@ def place_format_bits(grid, format_bits):
     for i in range(8):
         grid[8][size-7+i] = int(format_bits[i+c])
 
-#text = input() ## accept input string
-text = ""
+def calculate_ecc_codewords(V, ecc_level):
+    if V == 1 and ecc_level == 'L':
+        ecc_codewords = 7
+    if V == 1 and ecc_level == 'M':
+        ecc_codewords = 10
+    if V == 1 and ecc_level == 'Q':
+        ecc_codewords = 13
+    if V == 1 and ecc_level == 'H':
+        ecc_codewords = 9
+    if V == 2 and ecc_level == 'L':
+        ecc_codewords = 10
+    if V == 2 and ecc_level == 'M':
+        ecc_codewords = 16
+    if V == 2 and ecc_level == 'Q':
+        ecc_codewords = 22
+    if V == 2 and ecc_level == 'H':
+        ecc_codewords = 28
+    return ecc_codewords
 
-def process_input(data):
+#text = input() ## accept input string
+logo = False
+def process_input(data, ecc_level='L', logoBool=False):
     print("Processing in processor.py:", data)
     text = data
-
+    global logo
+    logo = logoBool
     V = 1
 
-    if len(data) > 17:
-        V = 2
-
-    size = (((V-1)*4)+21)
+    # if len(data) > 17:
+    #     V = 2
 
     textEncoded = bytearray(text, 'utf-8') ## to utf-8 to turn into byte mode | Correct handling of byte mode
     print(list(textEncoded))
 
-    # config
-    if V == 1:
-        ecc_codewords = 7
-    else:
-        ecc_codewords = 10
+    ecc_codewords = calculate_ecc_codewords(V, ecc_level)
+
     padding = ["11101100", "00010001"]
-
-    data_codewords = build_qr_payload(textEncoded, V) # data_codewords [/]
+    data_codewords, V, ecc_level = build_qr_payload(textEncoded, ecc_level, V) # data_codewords [/]
+    print("codewords -> ", data_codewords)
+    print("codewords -> ", len(data_codewords))
+    ecc_codewords = calculate_ecc_codewords(V, ecc_level)
     corrected_bits = generate_error_corrected_codewords(data_codewords, ecc_codewords) # ecc_codewords [/]
-    print(corrected_bits) 
-
+    # print(corrected_bits) 
+    size = (((V-1)*4)+21)
     grid = generate_grid(size)
     add_timing_patterns(grid)
     if V == 2:
@@ -343,7 +427,7 @@ def process_input(data):
     # format_bits = get_format_bits("00", 0)
     # place_format_bits(grid, format_bits)
 
-    print(get_format_bits())
+    # print(get_format_bits())
 
     # print("penalty 1 - >",  penalty_1(grid))
     # print("penalty 2 - >",  penalty_2(grid))
@@ -358,16 +442,9 @@ def process_input(data):
     penalty_score_5 = penalty_1(apply_mask_pattern(grid, 5)) + penalty_2(apply_mask_pattern(grid, 5)) + penalty_3(apply_mask_pattern(grid, 5)) + penalty_4(apply_mask_pattern(grid, 5))
     penalty_score_6 = penalty_1(apply_mask_pattern(grid, 6)) + penalty_2(apply_mask_pattern(grid, 6)) + penalty_3(apply_mask_pattern(grid, 6)) + penalty_4(apply_mask_pattern(grid, 6))
     penalty_score_7 = penalty_1(apply_mask_pattern(grid, 7)) + penalty_2(apply_mask_pattern(grid, 7)) + penalty_3(apply_mask_pattern(grid, 7)) + penalty_4(apply_mask_pattern(grid, 7))
-    print(penalty_score_0)
-    print(penalty_score_1)
-    print(penalty_score_2)
-    print(penalty_score_3)
-    print(penalty_score_4)
-    print(penalty_score_5)
-    print(penalty_score_6)
-    print(penalty_score_7)
     penalty_score = min(penalty_score_0, penalty_score_1, penalty_score_2, penalty_score_3, penalty_score_4, penalty_score_5, penalty_score_6, penalty_score_7)
     mask = 0
+    penalty_3(grid)
     if penalty_score == penalty_score_7:
         mask = 7
     elif penalty_score == penalty_score_6:
@@ -384,9 +461,16 @@ def process_input(data):
         mask = 1
     elif penalty_score == penalty_score_0:
         mask = 0
+
+
     grid = apply_mask_pattern(grid, mask)
-    format_bits = get_format_bits("01", mask)
+
+    format_bits = get_format_bits(ecc_level, mask)
     place_format_bits(grid, format_bits)
+
+    for row in grid:
+        print(''.join('🟨' if cell == 2 else '⬛' if cell == 1 else '⬜' for cell in row))
+        # print(''.join('⬛' if cell else '⬜' for cell in row))
 
     image = visualize_qr(grid)
     return image
@@ -406,9 +490,7 @@ def visualize_qr(grid):
     img_base64 = base64.b64encode(buf.read()).decode('utf-8')
     return img_base64  # return string
 
-# for row in grid:
-#     print(''.join('🟨' if cell == 2 else '⬛' if cell == 1 else '⬜' for cell in row))
-#     # print(''.join('⬛' if cell else '⬜' for cell in row))
+
 
 # # === Visualize the QR Code ===
 # def visualize_qr(grid):
