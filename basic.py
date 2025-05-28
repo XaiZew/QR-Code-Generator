@@ -2,6 +2,8 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')  # Use a non-GUI backend
 import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 import io
 import base64
 import reedsolo
@@ -227,14 +229,14 @@ def penalty_3(grid):
         for c in range(size - pattern_length + 1):
             window = grid[r][c:c+pattern_length]
             if window == pattern1 or window == pattern2:
-                print("Found pattern at row", r, "col", c, ":", window)
+                # print("Found pattern at row", r, "col", c, ":", window)
                 penalty_score += 40
     for c in range(size):
         for r in range(size - pattern_length + 1):
             window = [grid[r+i][c] for i in range(pattern_length)]
             if window == pattern1 or window == pattern2:
                 penalty_score += 40
-                print("Found pattern at col", c, "rpw", r, ":", window)
+                # print("Found pattern at col", c, "rpw", r, ":", window)
     return penalty_score
 
 def penalty_4(grid):
@@ -379,7 +381,7 @@ def calculate_ecc_codewords(V, ecc_level):
     if V == 1 and ecc_level == 'Q':
         ecc_codewords = 13
     if V == 1 and ecc_level == 'H':
-        ecc_codewords = 9
+        ecc_codewords = 17
     if V == 2 and ecc_level == 'L':
         ecc_codewords = 10
     if V == 2 and ecc_level == 'M':
@@ -392,7 +394,7 @@ def calculate_ecc_codewords(V, ecc_level):
 
 #text = input() ## accept input string
 logo = False
-def process_input(data, ecc_level='L', logoBool=False):
+def process_input(data, ecc_level='H', logoBool=False):
     print("Processing in processor.py:", data)
     text = data
     global logo
@@ -472,23 +474,48 @@ def process_input(data, ecc_level='L', logoBool=False):
         print(''.join('🟨' if cell == 2 else '⬛' if cell == 1 else '⬜' for cell in row))
         # print(''.join('⬛' if cell else '⬜' for cell in row))
 
-    image = visualize_qr(grid)
+    image = visualize_qr(grid, ecc_level)
     return image
 
-def visualize_qr(grid):
-    # Create image in memory
+def calculate_image_size(grid, ecc_level):
+    size_table = {
+        (1, 'L'): 0.05, (1, 'M'): 0.055, (1, 'Q'): 0.065, (1, 'H'): 0.075,
+        (2, 'L'): 0.0525, (2, 'M'): 0.075, (2, 'Q'): 0.075, (2, 'H'): 0.055,
+    }
+    V = 1
+    if len(grid) > 21:
+        V = 2
+    size = size_table.get((V, ecc_level))
+    return 0
+
+def visualize_qr(grid, ecc_level, image_path="./test_image.png"):
+    # Create the plot
     fig, ax = plt.subplots()
     ax.imshow(grid, cmap='binary')
     ax.axis('off')
+    image_size = calculate_image_size(grid, ecc_level)
+    # Load the image to overlay
+    center_img = mpimg.imread(image_path)
+    imagebox = OffsetImage(center_img, zoom=image_size)  # control image size with zoom
 
+    # Get grid center
+    rows = len(grid)
+    cols = len(grid[0]) if grid else 0
+    grid_center = (cols / 2 - 4, rows / 2 - 4)
+
+    # Add the image to the plot
+    ab = AnnotationBbox(imagebox, grid_center, frameon=False, box_alignment=(0,1))
+    ax.add_artist(ab)
+
+    # Save to buffer
     buf = io.BytesIO()
-    plt.savefig(buf, format='png', bbox_inches='tight', pad_inches=.25)
+    plt.savefig(buf, format='png', bbox_inches='tight', pad_inches=0.25)
     plt.close(fig)
     buf.seek(0)
 
     # Encode as base64
     img_base64 = base64.b64encode(buf.read()).decode('utf-8')
-    return img_base64  # return string
+    return img_base64
 
 
 
